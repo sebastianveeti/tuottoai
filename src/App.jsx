@@ -1,10 +1,21 @@
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import Dashboard from "./pages/Dashboard.jsx";
+import Cogs from "./pages/Cogs.jsx";
+import Agent from "./pages/Agent.jsx";
+
 export default function App() {
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="rounded-2xl bg-white shadow-sm p-8">
-        <h1 className="text-2xl font-semibold">Tuotto AI</h1>
-        <p className="text-slate-600 mt-2">Tailwind is working ✅</p>
-      </div>
-    </div>
+    <BrowserRouter>
+      <nav style={{display:'flex', gap:12, padding:12, borderBottom:'1px solid #eee'}}>
+        <Link to="/">Dashboard</Link>
+        <Link to="/cogs">COGS</Link>
+        <Link to="/agent">Run Agent</Link>
+      </nav>
+      <Routes>
+        <Route path="/" element={<Dashboard/>} />
+        <Route path="/cogs" element={<Cogs/>} />
+        <Route path="/agent" element={<Agent/>} />
+      </Routes>
+    </BrowserRouter>
   );
 }

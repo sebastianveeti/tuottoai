@@ -1,101 +1,58 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabase";
-import COGSTable from "../components/COGSTable";
 
 export default function Dashboard() {
-  const [metrics, setMetrics] = useState([]);
-  const [agentOutputs, setAgentOutputs] = useState([]);
-  const [loadingMetrics, setLoadingMetrics] = useState(true);
-  const [loadingOutputs, setLoadingOutputs] = useState(true);
+  const [rows, setRows] = useState([]);
+  const [ai, setAi] = useState(null);
+  const [err, setErr] = useState("");
 
   useEffect(() => {
-    const fetchData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const userId = user?.id || import.meta.env.VITE_TEST_USER_ID; // temp fallback
+        const since = new Date(Date.now()-6*24*60*60*1000).toISOString().slice(0,10);
 
-      // Fetch last 7 daily metrics
-      const { data: metricsData, error: metricsError } = await supabase
-        .from("daily_metrics")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("date", { ascending: false })
-        .limit(7);
-      if (!metricsError) setMetrics(metricsData);
-      setLoadingMetrics(false);
+        const { data: days, error: e1 } = await supabase
+          .from("daily_metrics")
+          .select("date,revenue_total,ad_spend,net_profit")
+          .eq("user_id", userId).gte("date", since).order("date", { ascending:true });
+        if (e1) throw e1;
+        setRows(days||[]);
 
-      // Fetch agent outputs
-      const { data: outputsData, error: outputsError } = await supabase
-        .from("agent_outputs")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(10);
-      if (!outputsError) setAgentOutputs(outputsData);
-      setLoadingOutputs(false);
-    };
-
-    fetchData();
+        const { data: aiRows, error: e2 } = await supabase
+          .from("agent_outputs")
+          .select("summary_text,adset_actions_json,pricing_tips_json,tips_to_improve,created_at,seven_day_profit,profit_climb")
+          .eq("user_id", userId).order("created_at", { ascending:false }).limit(1);
+        if (e2) throw e2;
+        setAi(aiRows?.[0]||null);
+      } catch (e) { setErr(e.message); }
+    })();
   }, []);
 
+  if (err) return <div style={{padding:20,color:'red'}}>Error: {err}</div>;
+  const totals = rows.reduce((a,r)=>({
+    rev:a.rev+(r.revenue_total||0), spend:a.spend+(r.ad_spend||0), prof:a.prof+(r.net_profit||0)
+  }), {rev:0,spend:0,prof:0});
+
   return (
-    <div className="p-4">
-      {/* Metrics Table */}
-      <h1 className="text-xl font-bold mb-4">Last 7 Days</h1>
-      {loadingMetrics ? (
-        <p>Loading metrics...</p>
-      ) : (
-        <table className="table-auto w-full border-collapse border border-gray-300 mb-6">
-          <thead>
-            <tr>
-              <th className="border p-2">Date</th>
-              <th className="border p-2">Revenue</th>
-              <th className="border p-2">Ad Spend</th>
-              <th className="border p-2">Orders</th>
-              <th className="border p-2">Net Profit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {metrics.map((row) => (
-              <tr key={row.id}>
-                <td className="border p-2">{row.date}</td>
-                <td className="border p-2">${row.revenue_total}</td>
-                <td className="border p-2">${row.ad_spend}</td>
-                <td className="border p-2">{row.orders_count}</td>
-                <td className="border p-2">${row.net_profit}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* COGS Table */}
-      <section className="mt-6">
-        <COGSTable />
-      </section>
-
-      {/* Agent Outputs */}
-      <section className="mt-8">
-        <h2 className="text-lg font-semibold mb-4">AI Recommendations</h2>
-        {loadingOutputs ? (
-          <p>Loading recommendations...</p>
-        ) : agentOutputs.length === 0 ? (
-          <p className="text-gray-600">No recommendations yet.</p>
-        ) : (
-          <div className="space-y-4">
-            {agentOutputs.map((output) => (
-              <div
-                key={output.id}
-                className="border rounded-lg p-4 shadow-sm bg-white"
-              >
-                <p className="text-sm text-gray-500">
-                  {new Date(output.created_at).toLocaleString()}
-                </p>
-                <p className="mt-2">{output.recommendation_text}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+    <div style={{padding:20}}>
+      <h1>7‑Day Overview</h1>
+      <Stats label="Revenue" v={totals.rev}/>
+      <Stats label="Ad Spend" v={totals.spend}/>
+      <Stats label="Net Profit" v={totals.prof}/>
+      <h2 style={{marginTop:20}}>Latest AI Recommendation</h2>
+      {!ai ? <div>— none yet —</div> :
+        <div style={{border:'1px solid #eee',borderRadius:12,padding:12}}>
+          <p style={{whiteSpace:'pre-wrap'}}>{ai.summary_text}</p>
+          <h3>Ad set actions</h3><List data={ai.adset_actions_json}/>
+          <h3>Pricing tips</h3><List data={ai.pricing_tips_json}/>
+          <h3>Other tips</h3><List data={ai.tips_to_improve}/>
+          <small>Updated: {new Date(ai.created_at).toLocaleString()}</small>
+        </div>}
     </div>
   );
 }
+function Stats({label,v}){return <div><b>{label}:</b> €{Number(v).toFixed(2)}</div>;}
+function List({data}){ if(!Array.isArray(data)||!data.length) return <>—</>;
+  return <ul>{data.map((x,i)=><li key={i}><code>{JSON.stringify(x)}</code></li>)}</ul> }
